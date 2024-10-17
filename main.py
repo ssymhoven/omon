@@ -1,8 +1,42 @@
 import pandas as pd
-import numpy as np
+
 import seaborn as sns
 import matplotlib.pyplot as plt
 from pandas.tseries.offsets import Week
+from source_engine.opus_source import OpusSource
+
+from bloomi import fetch_data_for_portfolio
+
+query = """
+    SELECT
+            positions.bloomberg_query,
+            positions.name,
+            positions.percent_nav
+        FROM
+            reportings
+                JOIN
+            accountsegments ON (accountsegments.reporting_uuid = reportings.uuid)
+                JOIN
+            positions ON (reportings.uuid = positions.reporting_uuid)
+        WHERE
+                positions.account_segment_id = accountsegments.accountsegment_id
+                        AND accountsegments.accountsegment_id = '17154631'
+                AND reportings.newest = 1
+                AND reportings.report = 'positions'
+                AND positions.asset_class = 'STOCK'
+                AND positions.bloomberg_query is not null
+                AND reportings.report_date = (SELECT
+                                                MAX(report_date)
+                                              FROM
+                                                reportings)
+    ORDER BY positions.percent_nav DESC
+"""
+
+opus = OpusSource()
+
+
+def get_portfolio() -> pd.DataFrame:
+    return opus.read_sql(query=query)
 
 
 def generate_third_fridays(start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DatetimeIndex:
@@ -90,7 +124,7 @@ def process_and_generate_plots(df: pd.DataFrame):
         plot_histograms_with_kde_subplots(monthly_performance, quarterly_performance, column)
 
 
-def main():
+def plot_histogram():
     file_name = "option_monitor.xlsx"
     sheet_name = "Indices"
 
@@ -103,4 +137,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    plot_histogram()
+
+    port = get_portfolio()
+    #maturity_dates = generate_third_fridays()
+    options = fetch_data_for_portfolio(port)
