@@ -128,6 +128,40 @@ def get_third_friday(year: int, month: int) -> datetime:
     return third_friday
 
 
+import pandas as pd
+
+
+def find_nearest_otm_option(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Filters the options data based on DELTA, OPEN_INT, and finds the option with the strike price
+    nearest to 10% out-of-the-money (OTM) for each security.
+
+    Args:
+        df (pd.DataFrame): The filtered options DataFrame with DELTA, OPEN_INT, STRIKE_PRICE, and PX_LAST columns.
+
+    Returns:
+        pd.DataFrame: DataFrame containing the closest options to 10% OTM for each security.
+    """
+    df_filtered = df[(df['DELTA'] >= 0.15) & (df['DELTA'] <= 0.5) & (df['OPEN_INT'] >= 100)]
+
+    def find_closest_option(group):
+        px_last = group['PX_LAST'].iloc[0]
+        target_strike = px_last * 1.1
+        group['TARGET_STRIKE'] = target_strike
+
+        group['Strike_Diff'] = (group['STRIKE_PRICE'] - target_strike).abs()
+        closest_option = group.loc[group['Strike_Diff'].idxmin()]
+        closest_option['Moneyness'] = ((closest_option['STRIKE_PRICE'] / closest_option['PX_LAST']) - 1) * 100
+
+        return closest_option
+
+    df_closest_options = df_filtered.groupby('SECURITY_x').apply(find_closest_option)
+
+    df_closest_options = df_closest_options.drop(columns=['Strike_Diff'])
+
+    return df_closest_options
+
+
 def fetch_data_for_portfolio(portfolio_df: pd.DataFrame) -> pd.DataFrame:
     """
     Fetches data for all securities in the portfolio, filters it, requests additional fields for options, and saves the result.
@@ -173,7 +207,7 @@ def fetch_data_for_portfolio(portfolio_df: pd.DataFrame) -> pd.DataFrame:
             df_option_data = pd.DataFrame(option_data)
 
             df = pd.merge(df_filtered_options, df_option_data, left_on="OPTION", right_on="SECURITY", how="left")
-            df = df[(df['DELTA'] >= 0.15) & (df['DELTA'] <= 0.5) & df['OPEN_INT'] > 0]
+            df = find_nearest_otm_option(df)
 
             df.to_excel(filtered_output_file, index=False)
             print(f"Filtered data with additional fields saved to {filtered_output_file}")

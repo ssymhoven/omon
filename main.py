@@ -128,11 +128,9 @@ def plot_histogram():
     file_name = "option_monitor.xlsx"
     sheet_name = "Indices"
 
-    # Step 1: Read data
     df = pd.read_excel(file_name, sheet_name=sheet_name, index_col=0, parse_dates=True)
     df.dropna(inplace=True)
 
-    # Step 2: Process data and generate charts
     process_and_generate_plots(df)
 
 
@@ -140,5 +138,5 @@ if __name__ == "__main__":
     plot_histogram()
 
     port = get_portfolio()
-    #maturity_dates = generate_third_fridays()
+
     options = fetch_data_for_portfolio(port)
