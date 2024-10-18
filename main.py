@@ -15,7 +15,7 @@ query = """
             positions.volume,
             positions.last_quote,
             positions.last_xrate_quantity,
-            accountsegment.predicted_nav,
+            accountsegments.predicted_nav,
             positions.percent_nav
         FROM
             reportings

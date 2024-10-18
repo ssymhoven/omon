@@ -233,9 +233,10 @@ def fetch_data_for_portfolio(portfolio_df: pd.DataFrame) -> pd.DataFrame:
 
         if option_ids:
             option_data = bloomberg.fetch_data_for_securities(option_ids,
-                                                              fields=["DELTA", "GAMMA", "PX_ASK", "PX_BID", "OPEN_INT"])
+                                                              fields=["DELTA", "GAMMA", "PX_ASK", "PX_BID", "OPT_MULTIPLIER", "OPEN_INT"])
 
             df_option_data = pd.DataFrame(option_data)
+            df_option_data['OPT_MULTIPLIER'] = df_option_data["OPT_MULTIPLIER"].fillna(1)
 
             df = pd.merge(df_filtered_options, df_option_data, left_on="OPTION", right_on="SECURITY", how="left")
             df.to_excel(option_data_input_file)
