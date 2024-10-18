@@ -214,7 +214,7 @@ def fetch_data_for_portfolio(portfolio_df: pd.DataFrame) -> pd.DataFrame:
             security_data = json.load(infile)
         print(f"Data loaded from {output_file}")
     else:
-        series_ids = portfolio_df['bloomberg_query'].tolist()
+        series_ids = portfolio_df.index.tolist()
         series_ids.append("SPX Index")
         security_data = bloomberg.fetch_data_for_securities(series_ids,
                                                             fields=["PX_LAST", "OPT_CHAIN", "VOLATILITY_30D",
