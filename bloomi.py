@@ -98,7 +98,7 @@ def filter_option_chains(security_data: list) -> pd.DataFrame:
         for option in sec.get("OPT_CHAIN", []):
             try:
                 parts = option.split()
-                if "C" in parts[-2]:
+                if "C" in parts[-2] and sec["SECURITY"] != "SPX Index":
                     expiry_date = datetime.strptime(parts[2], "%m/%d/%y")
                     strike_price = float(parts[-2][1:])
 
@@ -110,6 +110,20 @@ def filter_option_chains(security_data: list) -> pd.DataFrame:
                             "STRIKE_PRICE": strike_price,
                             "EXPIRY_DATE": expiry_date
                         })
+
+                if "P" in parts[-2] and sec["SECURITY"] == "SPX Index":
+                    expiry_date = datetime.strptime(parts[2], "%m/%d/%y")
+                    strike_price = float(parts[-2][1:])
+
+                    if expiry_date == third_friday and strike_price < px_last:
+                        filtered_options.append({
+                            "SECURITY": sec["SECURITY"],
+                            "OPTION": option,
+                            "PX_LAST": px_last,
+                            "STRIKE_PRICE": strike_price,
+                            "EXPIRY_DATE": expiry_date
+                        })
+
             except Exception as e:
                 print(f"Error processing option {option}: {e}")
 
@@ -128,36 +142,51 @@ def get_third_friday(year: int, month: int) -> datetime:
     return third_friday
 
 
-import pandas as pd
-
-
 def find_nearest_otm_option(df: pd.DataFrame) -> pd.DataFrame:
     """
     Filters the options data based on DELTA, OPEN_INT, and finds the option with the strike price
     nearest to 10% out-of-the-money (OTM) for each security.
+    Adds the TARGET_STRIKE and calculates moneyness (STRIKE_PRICE / PX_LAST) for the selected option,
+    ensuring the option is above 10% moneyness.
 
     Args:
         df (pd.DataFrame): The filtered options DataFrame with DELTA, OPEN_INT, STRIKE_PRICE, and PX_LAST columns.
 
     Returns:
-        pd.DataFrame: DataFrame containing the closest options to 10% OTM for each security.
+        pd.DataFrame: DataFrame containing the closest options to 10% OTM for each security,
+                      with TARGET_STRIKE and Moneyness columns.
     """
     df_filtered = df[(df['DELTA'] >= 0.15) & (df['DELTA'] <= 0.5) & (df['OPEN_INT'] >= 100)]
 
     def find_closest_option(group):
         px_last = group['PX_LAST'].iloc[0]
-        target_strike = px_last * 1.1
+        security = group['SECURITY_x'].iloc[0]
+
+        if security == "SPX Index":
+            target_strike = px_last * 0.9
+            option_type = 'P'
+        else:
+            target_strike = px_last * 1.1
+            option_type = 'C'
+
         group['TARGET_STRIKE'] = target_strike
+        group['Moneyness'] = ((group['STRIKE_PRICE'] / px_last) - 1)
 
-        group['Strike_Diff'] = (group['STRIKE_PRICE'] - target_strike).abs()
-        closest_option = group.loc[group['Strike_Diff'].idxmin()]
-        closest_option['Moneyness'] = ((closest_option['STRIKE_PRICE'] / closest_option['PX_LAST']) - 1) * 100
+        if option_type == 'C':
+            group_filtered = group[(group['Moneyness'] >= 0.05) & group['OPTION'].str.contains(option_type)]
+        else:
+            group_filtered = group[(group['Moneyness'] <= -0.05) & group['OPTION'].str.contains(option_type)]
 
-        return closest_option
+        if not group_filtered.empty:
+            group_filtered['Strike_Diff'] = (group_filtered['STRIKE_PRICE'] - target_strike).abs()
+            closest_option = group_filtered.loc[group_filtered['Strike_Diff'].idxmin()]
 
-    df_closest_options = df_filtered.groupby('SECURITY_x').apply(find_closest_option)
+            return closest_option
+        else:
+            return None
 
-    df_closest_options = df_closest_options.drop(columns=['Strike_Diff'])
+    df_closest_options = df_filtered.groupby('SECURITY_x').apply(find_closest_option).dropna()
+    df_closest_options = df_closest_options.drop(columns=['Strike_Diff'], errors='ignore')
 
     return df_closest_options
 
@@ -183,7 +212,7 @@ def fetch_data_for_portfolio(portfolio_df: pd.DataFrame) -> pd.DataFrame:
         print(f"Data loaded from {output_file}")
     else:
         series_ids = portfolio_df['bloomberg_query'].tolist()
-
+        series_ids.append("SPX Index")
         security_data = bloomberg.fetch_data_for_securities(series_ids,
                                                             fields=["PX_LAST", "OPT_CHAIN", "VOLATILITY_30D",
                                                                     "CALL_IMP_VOL_30D"])
@@ -202,7 +231,7 @@ def fetch_data_for_portfolio(portfolio_df: pd.DataFrame) -> pd.DataFrame:
 
         if option_ids:
             bloomberg = BloombergSource()
-            option_data = bloomberg.fetch_data_for_securities(option_ids, fields=["DELTA", "GAMMA", "PX_BID", "OPEN_INT"])
+            option_data = bloomberg.fetch_data_for_securities(option_ids, fields=["DELTA", "GAMMA", "PX_ASK", "PX_BID", "OPEN_INT"])
 
             df_option_data = pd.DataFrame(option_data)
 

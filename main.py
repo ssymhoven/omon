@@ -138,5 +138,9 @@ if __name__ == "__main__":
     plot_histogram()
 
     port = get_portfolio()
-
     options = fetch_data_for_portfolio(port)
+    merged_df = port.merge(options, left_index=True, right_index=True, how='outer')
+    merged_df['Premium'] = (merged_df['PX_BID'] / merged_df['PX_LAST']) * merged_df['percent_nav']
+
+    output_file = 'port.xlsx'
+    merged_df.to_excel(output_file, index=True)
