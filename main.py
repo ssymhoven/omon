@@ -4,6 +4,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from pandas.tseries.offsets import Week
 from source_engine.opus_source import OpusSource
+from tabulate import tabulate
 
 from bloomi import fetch_data_for_portfolio
 
@@ -11,6 +12,10 @@ query = """
     SELECT
             positions.bloomberg_query,
             positions.name,
+            positions.volume,
+            positions.last_quote,
+            positions.last_xrate_quantity,
+            accountsegment.predicted_nav,
             positions.percent_nav
         FROM
             reportings
@@ -29,7 +34,6 @@ query = """
                                                 MAX(report_date)
                                               FROM
                                                 reportings)
-    ORDER BY positions.percent_nav DESC
 """
 
 opus = OpusSource()
@@ -37,6 +41,8 @@ opus = OpusSource()
 
 def get_portfolio() -> pd.DataFrame:
     df = opus.read_sql(query=query)
+    df["value"] = df["last_quote"] * df["last_xrate_quantity"] * df["volume"]
+    df["percent_nav"] = df["value"] / df["predicted_nav"]
     df.set_index("bloomberg_query", inplace=True)
     return df
 
@@ -148,13 +154,34 @@ def calculate_premium(row):
         float: The calculated premium.
     """
     if row['TYPE'] == 'CALL':
-        premium = (row['PX_BID'] / row['PX_LAST']) * row['percent_nav'] / 100
+        premium = (row['PX_BID'] / row['PX_LAST']) * row['percent_nav'] * 100 * 100
     elif row['TYPE'] == 'PUT':
-        premium = row['PX_ASK'] / row['PX_LAST']
+        premium = - (row['PX_ASK'] / row['PX_LAST']) * 100 * 100
     else:
         premium = None
 
     return premium
+
+
+def generate_metrics(df: pd.DataFrame):
+
+    call_premium_sum = df.loc[df['TYPE'] == 'CALL', 'Premium'].sum()
+    put_premium_sum = df.loc[df['TYPE'] == 'PUT', 'Premium'].sum()
+
+    put_call_spread = call_premium_sum + put_premium_sum
+
+    call_percent_nav_sum = round(df.loc[df['TYPE'] == 'CALL', 'percent_nav'].sum() * 100, 2)
+
+    metrics = {
+        "Total CALL Premium (BPS)": call_premium_sum,
+        "Total PUT Premium (BPS)": put_premium_sum,
+        "PUT/CALL Spread (BPS)": put_call_spread,
+        "Total CALL Percent NAV (%)": call_percent_nav_sum,
+        "Total PUT Percent NAV (%)": 100.00
+    }
+
+    metrics_df = pd.DataFrame([metrics])
+    return metrics_df
 
 
 if __name__ == "__main__":
@@ -164,6 +191,10 @@ if __name__ == "__main__":
     options = fetch_data_for_portfolio(port)
     merged_df = port.merge(options, left_index=True, right_index=True, how='outer')
     merged_df['Premium'] = merged_df.apply(calculate_premium, axis=1)
+
+    merged_df.sort_values(by='percent_nav', inplace=True)
+    metrics = generate_metrics(df=merged_df)
+    print(tabulate(metrics, headers='keys', tablefmt='psql'))
 
     output_file = 'port.xlsx'
     merged_df.to_excel(output_file, index=False)

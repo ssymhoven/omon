@@ -2,4 +2,5 @@ seaborn
 pandas
 matplotlib
 openpyxl
+tabulate
 source_engine @ git+ssh://git@github.com/Donner-Reuschel-Luxemburg-S-A/source-engine.git@1.17.0
