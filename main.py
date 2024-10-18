@@ -143,4 +143,4 @@ if __name__ == "__main__":
     merged_df['Premium'] = (merged_df['PX_BID'] / merged_df['PX_LAST']) * merged_df['percent_nav']
 
     output_file = 'port.xlsx'
-    merged_df.to_excel(output_file, index=True)
+    merged_df.to_excel(output_file)

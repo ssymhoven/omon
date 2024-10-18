@@ -183,6 +183,7 @@ def find_nearest_otm_option(df: pd.DataFrame) -> pd.DataFrame:
 
             return closest_option
         else:
+            print(f"No option found for {security}.")
             return None
 
     df_closest_options = df_filtered.groupby('SECURITY_x').apply(find_closest_option).dropna()
@@ -203,6 +204,7 @@ def fetch_data_for_portfolio(portfolio_df: pd.DataFrame) -> pd.DataFrame:
     """
     output_file = f"bloomberg_data.json"
     filtered_output_file = f"filtered_bloomberg_data.xlsx"
+    option_data_input_file = f"option_input_data.xlsx"
 
     bloomberg = BloombergSource()
 
@@ -236,9 +238,11 @@ def fetch_data_for_portfolio(portfolio_df: pd.DataFrame) -> pd.DataFrame:
             df_option_data = pd.DataFrame(option_data)
 
             df = pd.merge(df_filtered_options, df_option_data, left_on="OPTION", right_on="SECURITY", how="left")
+            df.to_excel(option_data_input_file)
+
             df = find_nearest_otm_option(df)
 
-            df.to_excel(filtered_output_file, index=False)
+            df.to_excel(filtered_output_file)
             print(f"Filtered data with additional fields saved to {filtered_output_file}")
         else:
             df = pd.DataFrame()
