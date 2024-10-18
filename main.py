@@ -154,7 +154,7 @@ def calculate_premium(row):
         float: The calculated premium.
     """
     if row['TYPE'] == 'CALL':
-        premium = (row['PX_BID'] / row['PX_LAST']) * row['percent_nav'] * 100 * 100
+        premium = (((row["volume"] / row['OPT_MULTIPLIER']) * row['PX_BID'] * row['last_xrate_quantity']) / row['predicted_nav']) * 100 * 100
     elif row['TYPE'] == 'PUT':
         premium = - (row['PX_ASK'] / row['PX_LAST']) * 100 * 100
     else:
