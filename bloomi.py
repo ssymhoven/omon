@@ -12,8 +12,7 @@ class BloombergSource:
         session_options = blpapi.SessionOptions()
         session_options.setServerHost("localhost")
         session_options.setServerPort(8194)
-        if not self.session.start():
-            raise Exception("Failed to start session")
+        self.session.start()
 
     def __enter__(self):
         self.session.start()
@@ -106,6 +105,7 @@ def filter_option_chains(security_data: list) -> pd.DataFrame:
                         filtered_options.append({
                             "SECURITY": sec["SECURITY"],
                             "OPTION": option,
+                            "TYPE": "CALL",
                             "PX_LAST": px_last,
                             "STRIKE_PRICE": strike_price,
                             "EXPIRY_DATE": expiry_date
@@ -119,6 +119,7 @@ def filter_option_chains(security_data: list) -> pd.DataFrame:
                         filtered_options.append({
                             "SECURITY": sec["SECURITY"],
                             "OPTION": option,
+                            "TYPE": "PUT",
                             "PX_LAST": px_last,
                             "STRIKE_PRICE": strike_price,
                             "EXPIRY_DATE": expiry_date
@@ -156,7 +157,7 @@ def find_nearest_otm_option(df: pd.DataFrame) -> pd.DataFrame:
         pd.DataFrame: DataFrame containing the closest options to 10% OTM for each security,
                       with TARGET_STRIKE and Moneyness columns.
     """
-    df_filtered = df[(df['DELTA'] >= 0.15) & (df['DELTA'] <= 0.5) & (df['OPEN_INT'] >= 100)]
+    df_filtered = df[((df['DELTA'] >= 0.15) & (df['DELTA'] <= 0.5) | (df['DELTA'] <= -0.05) & (df['DELTA'] >= -0.5)) & (df['OPEN_INT'] >= 100)]
 
     def find_closest_option(group):
         px_last = group['PX_LAST'].iloc[0]
@@ -175,7 +176,7 @@ def find_nearest_otm_option(df: pd.DataFrame) -> pd.DataFrame:
         if option_type == 'C':
             group_filtered = group[(group['Moneyness'] >= 0.05) & group['OPTION'].str.contains(option_type)]
         else:
-            group_filtered = group[(group['Moneyness'] <= -0.05) & group['OPTION'].str.contains(option_type)]
+            group_filtered = group[(group['Moneyness'] >= -0.1) & group['OPTION'].str.contains(option_type)]
 
         if not group_filtered.empty:
             group_filtered['Strike_Diff'] = (group_filtered['STRIKE_PRICE'] - target_strike).abs()
@@ -223,28 +224,28 @@ def fetch_data_for_portfolio(portfolio_df: pd.DataFrame) -> pd.DataFrame:
             json.dump(security_data, outfile, indent=4)
         print(f"Data successfully saved to {output_file}")
 
-    if os.path.exists(filtered_output_file):
-        print(f"Filtered data already exists at {filtered_output_file}")
-        df = pd.read_excel(filtered_output_file)
+    if os.path.exists(option_data_input_file):
+        print(f"Option data already exists at {option_data_input_file}")
+        df = pd.read_excel(option_data_input_file)
     else:
         df_filtered_options = filter_option_chains(security_data)
-
         option_ids = df_filtered_options["OPTION"].tolist()
 
         if option_ids:
-            bloomberg = BloombergSource()
-            option_data = bloomberg.fetch_data_for_securities(option_ids, fields=["DELTA", "GAMMA", "PX_ASK", "PX_BID", "OPEN_INT"])
+            option_data = bloomberg.fetch_data_for_securities(option_ids,
+                                                              fields=["DELTA", "GAMMA", "PX_ASK", "PX_BID", "OPEN_INT"])
 
             df_option_data = pd.DataFrame(option_data)
 
             df = pd.merge(df_filtered_options, df_option_data, left_on="OPTION", right_on="SECURITY", how="left")
             df.to_excel(option_data_input_file)
 
-            df = find_nearest_otm_option(df)
-
-            df.to_excel(filtered_output_file)
-            print(f"Filtered data with additional fields saved to {filtered_output_file}")
-        else:
-            df = pd.DataFrame()
+    if os.path.exists(filtered_output_file):
+        print(f"Filtered data already exists at {filtered_output_file}")
+        df = pd.read_excel(filtered_output_file, index_col=0, header=0)
+    else:
+        df = find_nearest_otm_option(df)
+        df.to_excel(filtered_output_file)
+        print(f"Filtered data with additional fields saved to {filtered_output_file}")
 
     return df

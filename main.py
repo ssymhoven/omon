@@ -36,7 +36,9 @@ opus = OpusSource()
 
 
 def get_portfolio() -> pd.DataFrame:
-    return opus.read_sql(query=query)
+    df = opus.read_sql(query=query)
+    df.set_index("bloomberg_query", inplace=True)
+    return df
 
 
 def generate_third_fridays(start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DatetimeIndex:
@@ -134,13 +136,34 @@ def plot_histogram():
     process_and_generate_plots(df)
 
 
+def calculate_premium(row):
+    """
+    Calculate the premium for an option based on its type (CALL or PUT).
+    For CALL options, use PX_BID. For PUT options, use PX_ASK.
+
+    Args:
+        row (pd.Series): A row of the DataFrame containing option data.
+
+    Returns:
+        float: The calculated premium.
+    """
+    if row['TYPE'] == 'CALL':
+        premium = (row['PX_BID'] / row['PX_LAST']) * row['percent_nav'] / 100
+    elif row['TYPE'] == 'PUT':
+        premium = row['PX_ASK'] / row['PX_LAST']
+    else:
+        premium = None
+
+    return premium
+
+
 if __name__ == "__main__":
     plot_histogram()
 
     port = get_portfolio()
     options = fetch_data_for_portfolio(port)
     merged_df = port.merge(options, left_index=True, right_index=True, how='outer')
-    merged_df['Premium'] = (merged_df['PX_BID'] / merged_df['PX_LAST']) * merged_df['percent_nav']
+    merged_df['Premium'] = merged_df.apply(calculate_premium, axis=1)
 
     output_file = 'port.xlsx'
-    merged_df.to_excel(output_file)
+    merged_df.to_excel(output_file, index=False)
