@@ -73,7 +73,10 @@ class BloombergSource:
                                 option = field_data.getValueAsElement(i).getElementAsString("Security Description")
                                 opt_data[field].append(option)
                         else:
-                            opt_data[field] = sec_data.getElement("fieldData").getElementAsFloat(field)
+                            if field == 'EXPIRATION_PERIODICITY':
+                                opt_data[field] = sec_data.getElement("fieldData").getElementAsString(field)
+                            else:
+                                opt_data[field] = sec_data.getElement("fieldData").getElementAsFloat(field)
                 security_data.append(opt_data)
         return security_data
 
@@ -157,7 +160,7 @@ def find_nearest_otm_option(df: pd.DataFrame) -> pd.DataFrame:
         pd.DataFrame: DataFrame containing the closest options to 10% OTM for each security,
                       with TARGET_STRIKE and Moneyness columns.
     """
-    df_filtered = df[((df['DELTA'] >= 0.15) & (df['DELTA'] <= 0.5) | (df['DELTA'] <= -0.05) & (df['DELTA'] >= -0.5)) & (df['OPEN_INT'] >= 100)]
+    df_filtered = df[((df['DELTA'] >= 0.15) & (df['DELTA'] <= 0.5) | (df['DELTA'] <= -0.05) & (df['DELTA'] >= -0.5)) & (df['OPEN_INT'] >= 100) & df['EXPIRATION_PERIODICITY'] == "M"]
 
     def find_closest_option(group):
         px_last = group['PX_LAST'].iloc[0]
@@ -233,10 +236,10 @@ def fetch_data_for_portfolio(portfolio_df: pd.DataFrame) -> pd.DataFrame:
 
         if option_ids:
             option_data = bloomberg.fetch_data_for_securities(option_ids,
-                                                              fields=["DELTA", "GAMMA", "PX_ASK", "PX_BID", "OPT_MULTIPLIER", "OPEN_INT"])
+                                                              fields=["DELTA", "GAMMA", "PX_ASK", "PX_BID", "EXPIRATION_PERIODICITY", "PRICE_MULTIPLIER", "OPEN_INT"])
 
             df_option_data = pd.DataFrame(option_data)
-            df_option_data['OPT_MULTIPLIER'] = df_option_data["OPT_MULTIPLIER"].fillna(1)
+            #df_option_data['OPT_MULTIPLIER'] = df_option_data["OPT_MULTIPLIER"].fillna(1)
 
             df = pd.merge(df_filtered_options, df_option_data, left_on="OPTION", right_on="SECURITY", how="left")
             df.to_excel(option_data_input_file)

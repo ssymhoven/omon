@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 
 import seaborn as sns
@@ -13,6 +14,7 @@ query = """
             positions.bloomberg_query,
             positions.name,
             positions.volume,
+            positions.country_of_issue,
             positions.last_quote,
             positions.last_xrate_quantity,
             accountsegments.predicted_nav,
@@ -154,7 +156,7 @@ def calculate_premium(row):
         float: The calculated premium.
     """
     if row['TYPE'] == 'CALL':
-        premium = (((row["volume"] / row['OPT_MULTIPLIER']) * row['PX_BID'] * row['last_xrate_quantity']) / row['predicted_nav']) * 100 * 100
+        premium = ((row['# Contracts'] * row['PX_BID'] * row['PRICE_MULTIPLIER'] * row['last_xrate_quantity']) / row['predicted_nav']) * 100 * 100
     elif row['TYPE'] == 'PUT':
         premium = - (row['PX_ASK'] / row['PX_LAST']) * 100 * 100
     else:
@@ -163,24 +165,82 @@ def calculate_premium(row):
     return premium
 
 
-def generate_metrics(df: pd.DataFrame):
+def calculate_trading_fees(row):
+    """
+    Calculate trading fees based on the country of issue, type (CALL/PUT), and number of contracts.
+    Args:
+        row (pd.Series): A row from the DataFrame containing option data.
+    Returns:
+        float: The calculated trading fee.
+    """
+    contracts = row['# Contracts']
+    country = row['country_of_issue']
+    option_type = row['TYPE']
 
+    if option_type == 'CALL':
+        if country == 'US':
+            # US CALL options: $3.25 per contract, minimum $35
+            fee = max(3.25 * contracts, 35.00)
+        else:
+            # Non-US CALL options: €1.30 per contract, minimum €30
+            fee = max(1.30 * contracts, 30.00)
+    elif row['TYPE'] == "PUT":
+        fee = max(6.50 * contracts, 35.00)
+    else:
+        fee = 0
+    return fee
+
+
+def calculate_number_of_contracts(row, predicted_nav):
+    if row['TYPE'] == "CALL":
+        contracts = np.floor((row["volume"] / row['PRICE_MULTIPLIER']))
+    elif row['TYPE'] == "PUT":
+        contracts = np.floor((predicted_nav / (row['PRICE_MULTIPLIER'] * row["PX_LAST"])))
+    else:
+        contracts = 0
+
+    return contracts
+
+
+def generate_metrics(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Generate key metrics for a portfolio, including premiums, percent NAV, and weighted deltas/gammas/moneyness.
+    """
     call_premium_sum = df.loc[df['TYPE'] == 'CALL', 'Premium'].sum()
     put_premium_sum = df.loc[df['TYPE'] == 'PUT', 'Premium'].sum()
-
     put_call_spread = call_premium_sum + put_premium_sum
 
     call_percent_nav_sum = round(df.loc[df['TYPE'] == 'CALL', 'percent_nav'].sum() * 100, 2)
+
+    weighted_call_delta = (df.loc[df['TYPE'] == 'CALL', 'DELTA'] * df.loc[df['TYPE'] == 'CALL', 'percent_nav']).sum()
+    weighted_call_gamma = (df.loc[df['TYPE'] == 'CALL', 'GAMMA'] * df.loc[df['TYPE'] == 'CALL', 'percent_nav']).sum()
+    weighted_call_moneyness = round((
+                df.loc[df['TYPE'] == 'CALL', 'Moneyness'] * df.loc[df['TYPE'] == 'CALL', 'percent_nav']).sum() / df.loc[df['TYPE'] == 'CALL', 'percent_nav'].sum() * 100, 2)
+
+    put_row = df[df['TYPE'] == 'PUT'].iloc[0]
+    weighted_put_delta = put_row['DELTA']
+    weighted_put_gamma = put_row['GAMMA']
+    weighted_put_moneyness = round(put_row['Moneyness'] * 100, 2)
+
+    total_trading_fees = (df['Trading_Fees'].sum() / df['predicted_nav'].iloc[0]) * 100 * 100
 
     metrics = {
         "Total CALL Premium (BPS)": call_premium_sum,
         "Total PUT Premium (BPS)": put_premium_sum,
         "PUT/CALL Spread (BPS)": put_call_spread,
+        "Total Trading Fees (BPS)": total_trading_fees,
         "Total CALL Percent NAV (%)": call_percent_nav_sum,
-        "Total PUT Percent NAV (%)": 100.00
+        "Total PUT Percent NAV (%)": 100.00,
+        "Weighted Delta Calls": weighted_call_delta,
+        "Weighted Gamma Calls": weighted_call_gamma,
+        "Weighted Moneyness Calls (%)": weighted_call_moneyness,
+        "Weighted Delta (PUT)": weighted_put_delta,
+        "Weighted Gamma (PUT)": weighted_put_gamma,
+        "Weighted Moneyness Puts (%)": weighted_put_moneyness
     }
 
-    metrics_df = pd.DataFrame([metrics])
+    metrics_df = pd.DataFrame(list(metrics.items()), columns=['Metric', 'Value'])
+
     return metrics_df
 
 
@@ -190,6 +250,12 @@ if __name__ == "__main__":
     port = get_portfolio()
     options = fetch_data_for_portfolio(port)
     merged_df = port.merge(options, left_index=True, right_index=True, how='outer')
+
+    merged_df['# Contracts'] = merged_df.apply(lambda x: calculate_number_of_contracts(x, merged_df["predicted_nav"].iloc[0]), axis=1)
+    merged_df['% of Open Interest'] = merged_df["# Contracts"] / merged_df['OPEN_INT']
+    merged_df = merged_df[(merged_df['% of Open Interest'] > 0) & (merged_df['% of Open Interest'] < 0.5)]
+
+    merged_df['Trading_Fees'] = merged_df.apply(calculate_trading_fees, axis=1)
     merged_df['Premium'] = merged_df.apply(calculate_premium, axis=1)
 
     merged_df.sort_values(by='percent_nav', inplace=True)
