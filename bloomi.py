@@ -114,7 +114,7 @@ def filter_option_chains(security_data: list) -> pd.DataFrame:
                             "EXPIRY_DATE": expiry_date
                         })
 
-                if "P" in parts[-2] and sec["SECURITY"] == "SPX Index":
+                if "P" in parts[-2] and sec["SECURITY"] == "SPX Index" and "SPXW" not in option:
                     expiry_date = datetime.strptime(parts[2], "%m/%d/%y")
                     strike_price = float(parts[-2][1:])
 
@@ -160,7 +160,7 @@ def find_nearest_otm_option(df: pd.DataFrame) -> pd.DataFrame:
         pd.DataFrame: DataFrame containing the closest options to 10% OTM for each security,
                       with TARGET_STRIKE and Moneyness columns.
     """
-    df_filtered = df[((df['DELTA'] >= 0.15) & (df['DELTA'] <= 0.5) | (df['DELTA'] <= -0.05) & (df['DELTA'] >= -0.5)) & (df['OPEN_INT'] >= 100) & df['EXPIRATION_PERIODICITY'] == "M"]
+    df_filtered = df[((df['DELTA'] >= 0.15) & (df['DELTA'] <= 0.5) | (df['DELTA'] <= -0.05) & (df['DELTA'] >= -0.5)) & (df['OPEN_INT'] >= 100)]
 
     def find_closest_option(group):
         px_last = group['PX_LAST'].iloc[0]
@@ -239,7 +239,6 @@ def fetch_data_for_portfolio(portfolio_df: pd.DataFrame) -> pd.DataFrame:
                                                               fields=["DELTA", "GAMMA", "PX_ASK", "PX_BID", "EXPIRATION_PERIODICITY", "PRICE_MULTIPLIER", "OPEN_INT"])
 
             df_option_data = pd.DataFrame(option_data)
-            #df_option_data['OPT_MULTIPLIER'] = df_option_data["OPT_MULTIPLIER"].fillna(1)
 
             df = pd.merge(df_filtered_options, df_option_data, left_on="OPTION", right_on="SECURITY", how="left")
             df.to_excel(option_data_input_file)

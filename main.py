@@ -253,7 +253,7 @@ if __name__ == "__main__":
 
     merged_df['# Contracts'] = merged_df.apply(lambda x: calculate_number_of_contracts(x, merged_df["predicted_nav"].iloc[0]), axis=1)
     merged_df['% of Open Interest'] = merged_df["# Contracts"] / merged_df['OPEN_INT']
-    merged_df = merged_df[(merged_df['% of Open Interest'] > 0) & (merged_df['% of Open Interest'] < 0.5)]
+    merged_df = merged_df[(merged_df['% of Open Interest'] > 0) & (merged_df['% of Open Interest'] < 1)]
 
     merged_df['Trading_Fees'] = merged_df.apply(calculate_trading_fees, axis=1)
     merged_df['Premium'] = merged_df.apply(calculate_premium, axis=1)
